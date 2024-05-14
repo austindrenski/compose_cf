@@ -1,0 +1,29 @@
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+indent_style = space
+insert_final_newline = true
+trim_trailing_whitespace = true
+
+[.editorconfig]
+editorconfig_align_group_field_declarations = false
+editorconfig_space_after_colon = false
+editorconfig_space_after_comma = true
+editorconfig_space_before_colon = false
+editorconfig_space_before_comma = false
+editorconfig_spaces_around_assignment_operators = true
+
+[*.go]
+indent_style = tab
+
+[*.hcl]
+indent_size = 2
+max_line_length = 0
+
+[*.md]
+indent_size = 2
+
+[*.{yml,yaml}]
+indent_size = 2

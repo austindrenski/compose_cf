@@ -1,0 +1,81 @@
+name: CI
+
+on:
+  merge_group:
+    types:
+    - checks_requested
+  pull_request:
+    paths-ignore:
+    - '**.md'
+  push:
+    branches:
+    - main
+    - release/*
+    tags:
+    - v*
+
+defaults:
+  run:
+    shell: bash
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  bake:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Setup Buildx
+      uses: docker/setup-buildx-action@v3.3.0
+
+    - name: Login to GitHub Container Registry
+      uses: docker/login-action@v3.1.0
+      with:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+        registry: ghcr.io
+
+    - name: Print definition
+      env:
+        BUILDX_GIT_LABELS: full
+        GITHUB_REF_NAME: ${{ github.ref_name }}
+        GITHUB_REF_TYPE: ${{ github.ref_type }}
+      run: docker buildx bake --print
+
+    - name: Bake container images
+      env:
+        BUILDX_GIT_LABELS: full
+        GITHUB_REF_NAME: ${{ github.ref_name }}
+        GITHUB_REF_TYPE: ${{ github.ref_type }}
+      run: docker buildx bake
+
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Setup Go
+      uses: actions/setup-go@v5.0.1
+      with:
+        cache-dependency-path: go.sum
+        go-version-file: go.mod
+
+    - name: Test
+      run: go test -v ./...
+
+    - name: Build
+      run: go build -v ./cmd
+
+  deploy:
+    needs:
+    - bake
+    - build
+    secrets: inherit
+    uses: ./.github/workflows/release.yml

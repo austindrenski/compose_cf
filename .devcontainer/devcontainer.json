@@ -1,0 +1,11 @@
+{
+  "containerEnv": {
+    "GITHUB_TOKEN": "${localEnv:GITHUB_TOKEN}"
+  },
+  "features": {
+    "ghcr.io/devcontainers/features/github-cli:1": {},
+    "ghcr.io/devcontainers/features/go:1": {}
+  },
+  "image": "mcr.microsoft.com/devcontainers/base:ubuntu",
+  "name": "compose_cf-devcontainer"
+}
