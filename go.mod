@@ -9,7 +9,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/config v1.27.13
 	github.com/aws/aws-sdk-go-v2/credentials v1.17.13
 	github.com/aws/aws-sdk-go-v2/service/cloudformation v1.50.1
-	github.com/aws/aws-sdk-go-v2/service/s3 v1.53.2
+	github.com/aws/aws-sdk-go-v2/service/s3 v1.54.0
 	github.com/awslabs/goformation/v7 v7.14.9
 	github.com/hashicorp/go-uuid v1.0.3
 	github.com/stretchr/testify v1.9.0
