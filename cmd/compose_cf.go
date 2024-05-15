@@ -25,7 +25,7 @@ type stackName string
 type templateUrl string
 
 func main() {
-	name, template := validateArgs(os.Args)
+	stack, template := validate()
 
 	ctx := context.Background()
 
@@ -37,32 +37,28 @@ func main() {
 	clientCF := cf.NewFromConfig(cfg)
 	clientS3 := s3.NewFromConfig(cfg)
 
-	if err := up(ctx, clientCF, clientS3, name, template); err != nil {
+	if err := up(ctx, clientCF, clientS3, stack, template); err != nil {
 		panic(err)
 	}
 }
 
-func validateArgs(args []string) (stackName, *gocf.Template) {
-	if len(args) != 2 {
-		panic("usage: compose_cf CF_STACK_NAME CF_TEMPLATE_PATH")
+func validate() (stackName, *gocf.Template) {
+	stack, ok := os.LookupEnv("COMPOSE_CF_STACK_NAME")
+	if !ok {
+		panic("Required environment variable `COMPOSE_CF_STACK_NAME` not set")
 	}
 
-	name := args[1]
-	if name == "" {
-		panic("Must specify a stack name")
+	template, ok := os.LookupEnv("COMPOSE_CF_TEMPLATE")
+	if !ok {
+		panic("Required environment variable `COMPOSE_CF_TEMPLATE` not set")
 	}
 
-	file := args[2]
-	if file == "" {
-		panic("Must specify a file path to an existing CloudFormation template")
-	}
-
-	template, err := goformation.Open(file)
+	parsed, err := goformation.Open(template)
 	if err != nil {
 		panic(err)
 	}
 
-	return stackName(name), template
+	return stackName(stack), parsed
 }
 
 func up(ctx context.Context, clientCF *cf.Client, clientS3 *s3.Client, stack stackName, template *gocf.Template) error {
