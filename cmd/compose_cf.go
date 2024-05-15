@@ -100,7 +100,7 @@ func createBucket(ctx context.Context, clientS3 *s3.Client) (bucketName, cleanup
 	}
 
 	bucket := fmt.Sprintf("com.docker.compose.%s", key)
-	fmt.Printf("Create s3 bucket %q to store cloudformation template", bucket)
+	fmt.Printf("Create s3 bucket %q to store cloudformation template\n", bucket)
 
 	_, err = clientS3.CreateBucket(ctx, &s3.CreateBucketInput{
 		Bucket: aws.String(bucket),
@@ -114,7 +114,7 @@ func createBucket(ctx context.Context, clientS3 *s3.Client) (bucketName, cleanup
 			Bucket: aws.String(bucket),
 		})
 		if err != nil {
-			fmt.Printf("Failed to remove S3 bucket: %s", err)
+			fmt.Printf("Failed to remove S3 bucket: %s\n", err)
 		}
 	}, nil
 }
@@ -243,7 +243,7 @@ func uploadTemplate(ctx context.Context, clientS3 *s3.Client, bucket bucketName,
 	key := fmt.Sprintf("%s/%s", stack, name)
 	url := templateUrl(fmt.Sprintf("https://s3.amazonaws.com/%s/%s", bucket, key))
 
-	fmt.Printf("Uploading template `%s`:\n\n%s", url, yaml)
+	fmt.Printf("Uploading template %s\n\n%s\n", url, yaml)
 
 	_, err = clientS3.PutObject(ctx, &s3.PutObjectInput{
 		Key:         aws.String(key),
@@ -261,7 +261,7 @@ func uploadTemplate(ctx context.Context, clientS3 *s3.Client, bucket bucketName,
 			Key:    aws.String(key),
 		})
 		if err != nil {
-			fmt.Printf("Failed to remove S3 item: %s", err)
+			fmt.Printf("Failed to remove S3 item: %s\n", err)
 		}
 	}, nil
 }
