@@ -124,7 +124,7 @@ func createChangeSet(ctx context.Context, clientCF *cf.Client, stack stackName, 
 		Capabilities: []cftypes.Capability{
 			cftypes.CapabilityCapabilityIam,
 		},
-		ChangeSetName:       aws.String(fmt.Sprintf("Update_%s", time.Now().Format("2006_01_02_15_04_05Z"))),
+		ChangeSetName:       aws.String(fmt.Sprintf("Update-%s", time.Now().Format("2006-01-02-15-04-05Z"))),
 		ChangeSetType:       cftypes.ChangeSetTypeUpdate,
 		IncludeNestedStacks: aws.Bool(true),
 		OnStackFailure:      cftypes.OnStackFailureRollback,
