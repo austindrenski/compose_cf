@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"regexp"
 	"time"
@@ -48,12 +49,12 @@ func validate() (stackName, *gocf.Template) {
 		panic("Required environment variable `COMPOSE_CF_STACK_NAME` not set")
 	}
 
-	file, ok := os.LookupEnv("COMPOSE_CF_TEMPLATE_FILE")
-	if !ok {
-		panic("Required environment variable `COMPOSE_CF_TEMPLATE_FILE` not set")
+	file, err := io.ReadAll(os.Stdin)
+	if err != nil {
+		panic(fmt.Errorf("unable to read CloudFormation template from stdin: %w", err))
 	}
 
-	template, err := goformation.Open(file)
+	template, err := goformation.ParseYAML(file)
 	if err != nil {
 		panic(err)
 	}
