@@ -26,7 +26,10 @@ type stackName string
 type templateUrl string
 
 func main() {
-	stack, template := validate()
+	stack, template, err := validate()
+	if err != nil {
+		panic(err)
+	}
 
 	ctx := context.Background()
 
@@ -43,23 +46,23 @@ func main() {
 	}
 }
 
-func validate() (stackName, *gocf.Template) {
+func validate() (stackName, *gocf.Template, error) {
 	stack, ok := os.LookupEnv("COMPOSE_CF_STACK_NAME")
 	if !ok {
-		panic("Required environment variable `COMPOSE_CF_STACK_NAME` not set")
+		return "", nil, fmt.Errorf("required environment variable `COMPOSE_CF_STACK_NAME` not set")
 	}
 
 	file, err := io.ReadAll(os.Stdin)
 	if err != nil {
-		panic(fmt.Errorf("unable to read CloudFormation template from stdin: %w", err))
+		return "", nil, fmt.Errorf("unable to read CloudFormation template from stdin: %w", err)
 	}
 
 	template, err := goformation.ParseYAML(file)
 	if err != nil {
-		panic(err)
+		return "", nil, fmt.Errorf("unable to parse CloudFormation template from stdin: %w", err)
 	}
 
-	return stackName(stack), template
+	return stackName(stack), template, nil
 }
 
 func up(ctx context.Context, clientCF *cf.Client, clientS3 *s3.Client, stack stackName, template *gocf.Template) error {
