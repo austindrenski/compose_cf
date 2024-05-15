@@ -11,7 +11,7 @@ variable REGISTRY {
   default = "ghcr.io/austindrenski"
 }
 variable VERSION {
-  default = "0.1.7"
+  default = "0.1.8"
 }
 
 group default {
