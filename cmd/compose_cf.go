@@ -77,10 +77,10 @@ func up(ctx context.Context, clientCF *cf.Client, clientS3 *s3.Client, stack sta
 	defer cleanupBucket()
 
 	templateUrl, cleanupTemplates, err := splitTemplates(ctx, clientS3, bucket, stack, template)
+	defer cleanupTemplates()
 	if err != nil {
 		return err
 	}
-	defer cleanupTemplates()
 
 	_, err = clientCF.DescribeStacks(ctx, &cf.DescribeStacksInput{
 		StackName: aws.String(string(stack)),
@@ -179,55 +179,56 @@ func splitTemplates(ctx context.Context, clientS3 *s3.Client, bucket bucketName,
 	var cleanups []cleanup
 
 	cleanup := func() {
-		for _, cleanup := range cleanups {
-			cleanup()
+		for _, c := range cleanups {
+			c()
 		}
 	}
 
-	for _, resources := range getSplittableResources(template) {
-		cleanupTemplate, err := splitResources(ctx, clientS3, bucket, stack, template, resources)
-		if err != nil {
-			cleanup()
-			return "", nil, err
-		}
-
-		cleanups = append(cleanups, cleanupTemplate)
+	if c, err := splitResources(ctx, clientS3, bucket, stack, template.Resources, template.GetAllECSServiceResources()); err != nil {
+		return "", cleanup, err
+	} else {
+		cleanups = append(cleanups, c)
 	}
 
-	templateUrl, cleanupTemplate, err := uploadTemplate(ctx, clientS3, bucket, stack, "template.yaml", template)
-	if err != nil {
-		cleanup()
-		return "", nil, err
+	if c, err := splitResources(ctx, clientS3, bucket, stack, template.Resources, template.GetAllECSTaskDefinitionResources()); err != nil {
+		return "", cleanup, err
+	} else {
+		cleanups = append(cleanups, c)
 	}
 
-	cleanups = append(cleanups, cleanupTemplate)
+	if c, err := splitResources(ctx, clientS3, bucket, stack, template.Resources, template.GetAllServiceDiscoveryServiceResources()); err != nil {
+		return "", cleanup, err
+	} else {
+		cleanups = append(cleanups, c)
+	}
 
-	return templateUrl, cleanup, nil
+	if templateUrl, c, err := uploadTemplate(ctx, clientS3, bucket, stack, "template.yaml", template); err != nil {
+		return "", cleanup, err
+	} else {
+		cleanups = append(cleanups, c)
+		return templateUrl, cleanup, nil
+	}
 }
 
-func splitResources(ctx context.Context, clientS3 *s3.Client, bucket bucketName, stack stackName, template *gocf.Template, resources gocf.Resources) (cleanup, error) {
-	if len(resources) == 0 {
-		return func() {}, nil
-	}
+func splitResources[T gocf.Resource](ctx context.Context, clientS3 *s3.Client, bucket bucketName, stack stackName, resources gocf.Resources, subset map[string]T) (cleanup, error) {
+	nested := gocf.NewTemplate()
 
-	var nested = gocf.NewTemplate()
-	var nestedName string
+	for name, resource := range subset {
+		delete(resources, name)
 
-	for key, resource := range resources {
-		nested.Resources[key] = resource
-		template.Resources[key] = nil
+		nested.Resources[name] = resource
 
-		if nestedName == "" {
-			nestedName = regexp.MustCompile("[^a-zA-Z0-9]+").ReplaceAllString(resource.AWSCloudFormationType(), "")
+		if nested.Description == "" {
+			nested.Description = fmt.Sprintf("%sNestedStack", regexp.MustCompile("[^a-zA-Z0-9]+").ReplaceAllString(resource.AWSCloudFormationType(), ""))
 		}
 	}
 
-	templateUrl, cleanup, err := uploadTemplate(ctx, clientS3, bucket, stack, fmt.Sprintf("template.%s.yaml", nestedName), nested)
+	templateUrl, cleanup, err := uploadTemplate(ctx, clientS3, bucket, stack, fmt.Sprintf("template.%s.yaml", nested.Description), nested)
 	if err != nil {
 		return nil, err
 	}
 
-	template.Resources[fmt.Sprintf("%sNestedStack", nestedName)] = &gocfcf.Stack{
+	resources[nested.Description] = &gocfcf.Stack{
 		TemplateURL: string(templateUrl),
 	}
 
@@ -264,39 +265,4 @@ func uploadTemplate(ctx context.Context, clientS3 *s3.Client, bucket bucketName,
 			fmt.Printf("Failed to remove S3 item: %s\n", err)
 		}
 	}, nil
-}
-
-func getSplittableResources(template *gocf.Template) []gocf.Resources {
-	return []gocf.Resources{
-		// AWS::ECS::Service
-		func(template *gocf.Template) gocf.Resources {
-			resources := gocf.Resources{}
-
-			for name, resource := range template.GetAllECSServiceResources() {
-				resources[name] = resource
-			}
-
-			return resources
-		}(template),
-		// AWS::ECS::TaskDefinition
-		func(template *gocf.Template) gocf.Resources {
-			resources := gocf.Resources{}
-
-			for name, resource := range template.GetAllECSTaskDefinitionResources() {
-				resources[name] = resource
-			}
-
-			return resources
-		}(template),
-		// AWS::ServiceDiscovery::Service
-		func(template *gocf.Template) gocf.Resources {
-			resources := gocf.Resources{}
-
-			for name, resource := range template.GetAllServiceDiscoveryServiceResources() {
-				resources[name] = resource
-			}
-
-			return resources
-		}(template),
-	}
 }
