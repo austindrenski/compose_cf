@@ -180,7 +180,9 @@ func splitTemplates(ctx context.Context, clientS3 *s3.Client, bucket bucketName,
 
 	cleanup := func() {
 		for _, c := range cleanups {
-			c()
+			if c != nil {
+				c()
+			}
 		}
 	}
 
@@ -211,6 +213,10 @@ func splitTemplates(ctx context.Context, clientS3 *s3.Client, bucket bucketName,
 }
 
 func splitResources[T gocf.Resource](ctx context.Context, clientS3 *s3.Client, bucket bucketName, stack stackName, resources gocf.Resources, subset map[string]T) (cleanup, error) {
+	if len(subset) == 0 {
+		return nil, nil
+	}
+
 	nested := gocf.NewTemplate()
 
 	for name, resource := range subset {
