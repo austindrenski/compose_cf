@@ -240,8 +240,13 @@ func uploadTemplate(ctx context.Context, clientS3 *s3.Client, bucket bucketName,
 		return "", nil, err
 	}
 
+	key := fmt.Sprintf("%s/%s", stack, name)
+	url := templateUrl(fmt.Sprintf("https://s3.amazonaws.com/%s/%s", bucket, key))
+
+	fmt.Printf("Uploading template `%s`:\n\n%s", url, yaml)
+
 	_, err = clientS3.PutObject(ctx, &s3.PutObjectInput{
-		Key:         aws.String(fmt.Sprintf("%s/%s", stack, name)),
+		Key:         aws.String(key),
 		Body:        bytes.NewReader(yaml),
 		Bucket:      aws.String(string(bucket)),
 		ContentType: aws.String("application/yaml"),
@@ -250,10 +255,10 @@ func uploadTemplate(ctx context.Context, clientS3 *s3.Client, bucket bucketName,
 		return "", nil, err
 	}
 
-	return templateUrl(fmt.Sprintf("https://s3.amazonaws.com/%s/%s/%s", bucket, stack, name)), func() {
+	return url, func() {
 		_, err := clientS3.DeleteObject(ctx, &s3.DeleteObjectInput{
 			Bucket: aws.String(string(bucket)),
-			Key:    aws.String(fmt.Sprintf("%s/%s", stack, name)),
+			Key:    aws.String(key),
 		})
 		if err != nil {
 			fmt.Printf("Failed to remove S3 item: %s", err)
