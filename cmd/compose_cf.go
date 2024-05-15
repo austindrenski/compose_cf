@@ -66,7 +66,7 @@ func validate() (stackName, *gocf.Template, error) {
 		return "", nil, fmt.Errorf("unable to parse CloudFormation template from stdin: %w", err)
 	}
 
-	return stackName(stack), template, nil
+	return stack, template, nil
 }
 
 func up(ctx context.Context, clientCF *cf.Client, clientS3 *s3.Client, stack stackName, template *gocf.Template) error {
