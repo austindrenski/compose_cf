@@ -47,9 +47,13 @@ func main() {
 }
 
 func validate() (stackName, *gocf.Template, error) {
-	stack, ok := os.LookupEnv("COMPOSE_CF_STACK_NAME")
-	if !ok {
-		return "", nil, fmt.Errorf("required environment variable `COMPOSE_CF_STACK_NAME` not set")
+	if len(os.Args) != 2 {
+		return "", nil, fmt.Errorf("usage: compose_cf STACK_NAME [<stdin>]")
+	}
+
+	stack := stackName(os.Args[1])
+	if len(stack) == 0 {
+		return "", nil, fmt.Errorf("usage: compose_cf STACK_NAME [<stdin>]")
 	}
 
 	file, err := io.ReadAll(os.Stdin)
