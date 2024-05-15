@@ -48,17 +48,17 @@ func validate() (stackName, *gocf.Template) {
 		panic("Required environment variable `COMPOSE_CF_STACK_NAME` not set")
 	}
 
-	template, ok := os.LookupEnv("COMPOSE_CF_TEMPLATE")
+	file, ok := os.LookupEnv("COMPOSE_CF_TEMPLATE_FILE")
 	if !ok {
-		panic("Required environment variable `COMPOSE_CF_TEMPLATE` not set")
+		panic("Required environment variable `COMPOSE_CF_TEMPLATE_FILE` not set")
 	}
 
-	parsed, err := goformation.Open(template)
+	template, err := goformation.Open(file)
 	if err != nil {
 		panic(err)
 	}
 
-	return stackName(stack), parsed
+	return stackName(stack), template
 }
 
 func up(ctx context.Context, clientCF *cf.Client, clientS3 *s3.Client, stack stackName, template *gocf.Template) error {
