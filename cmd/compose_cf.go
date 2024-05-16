@@ -86,7 +86,7 @@ func up(ctx context.Context, clientCF *cf.Client, clientS3 *s3.Client, stack sta
 	}
 	defer cleanupBucket()
 
-	templateUrl, cleanupTemplates, err := splitTemplates(ctx, clientS3, bucket, stack, template)
+	templateUrl, cleanupTemplates, err := splitTemplates(ctx, clientS3, bucket, template)
 	defer cleanupTemplates()
 	if err != nil {
 		return err
@@ -185,7 +185,7 @@ func createStack(ctx context.Context, clientCF *cf.Client, stack stackName, temp
 	return nil
 }
 
-func splitTemplates(ctx context.Context, clientS3 *s3.Client, bucket bucketName, stack stackName, template *gocf.Template) (templateUrl, cleanup, error) {
+func splitTemplates(ctx context.Context, clientS3 *s3.Client, bucket bucketName, template *gocf.Template) (templateUrl, cleanup, error) {
 	var cleanups []cleanup
 
 	cleanup := func() {
@@ -196,25 +196,25 @@ func splitTemplates(ctx context.Context, clientS3 *s3.Client, bucket bucketName,
 		}
 	}
 
-	if c, err := splitResources(ctx, clientS3, bucket, stack, template.Resources, template.GetAllECSServiceResources()); err != nil {
+	if c, err := splitResources(ctx, clientS3, bucket, template.Resources, template.GetAllECSServiceResources()); err != nil {
 		return "", cleanup, err
 	} else {
 		cleanups = append(cleanups, c)
 	}
 
-	if c, err := splitResources(ctx, clientS3, bucket, stack, template.Resources, template.GetAllECSTaskDefinitionResources()); err != nil {
+	if c, err := splitResources(ctx, clientS3, bucket, template.Resources, template.GetAllECSTaskDefinitionResources()); err != nil {
 		return "", cleanup, err
 	} else {
 		cleanups = append(cleanups, c)
 	}
 
-	if c, err := splitResources(ctx, clientS3, bucket, stack, template.Resources, template.GetAllServiceDiscoveryServiceResources()); err != nil {
+	if c, err := splitResources(ctx, clientS3, bucket, template.Resources, template.GetAllServiceDiscoveryServiceResources()); err != nil {
 		return "", cleanup, err
 	} else {
 		cleanups = append(cleanups, c)
 	}
 
-	if templateUrl, c, err := uploadTemplate(ctx, clientS3, bucket, stack, "template.yaml", template); err != nil {
+	if templateUrl, c, err := uploadTemplate(ctx, clientS3, bucket, "template.yaml", template); err != nil {
 		return "", cleanup, err
 	} else {
 		cleanups = append(cleanups, c)
@@ -222,7 +222,7 @@ func splitTemplates(ctx context.Context, clientS3 *s3.Client, bucket bucketName,
 	}
 }
 
-func splitResources[T gocf.Resource](ctx context.Context, clientS3 *s3.Client, bucket bucketName, stack stackName, resources gocf.Resources, subset map[string]T) (cleanup, error) {
+func splitResources[T gocf.Resource](ctx context.Context, clientS3 *s3.Client, bucket bucketName, resources gocf.Resources, subset map[string]T) (cleanup, error) {
 	if len(subset) == 0 {
 		return nil, nil
 	}
@@ -239,7 +239,7 @@ func splitResources[T gocf.Resource](ctx context.Context, clientS3 *s3.Client, b
 		}
 	}
 
-	templateUrl, cleanup, err := uploadTemplate(ctx, clientS3, bucket, stack, fmt.Sprintf("template.%s.yaml", nested.Description), nested)
+	templateUrl, cleanup, err := uploadTemplate(ctx, clientS3, bucket, fmt.Sprintf("template.%s.yaml", nested.Description), nested)
 	if err != nil {
 		return nil, err
 	}
@@ -251,22 +251,21 @@ func splitResources[T gocf.Resource](ctx context.Context, clientS3 *s3.Client, b
 	return cleanup, nil
 }
 
-func uploadTemplate(ctx context.Context, clientS3 *s3.Client, bucket bucketName, stack stackName, name string, template *gocf.Template) (templateUrl, cleanup, error) {
+func uploadTemplate(ctx context.Context, clientS3 *s3.Client, bucket bucketName, key string, template *gocf.Template) (templateUrl, cleanup, error) {
 	yaml, err := template.YAML()
 	if err != nil {
 		return "", nil, err
 	}
 
-	key := fmt.Sprintf("%s/%s", stack, name)
 	url := templateUrl(fmt.Sprintf("https://s3.amazonaws.com/%s/%s", bucket, key))
 
 	fmt.Printf("Uploading template %s\n```yaml\n%s\n```\n", url, yaml)
 
 	_, err = clientS3.PutObject(ctx, &s3.PutObjectInput{
-		Key:         aws.String(key),
 		Body:        bytes.NewReader(yaml),
 		Bucket:      aws.String(string(bucket)),
 		ContentType: aws.String("application/yaml"),
+		Key:         aws.String(key),
 	})
 	if err != nil {
 		return "", nil, err
