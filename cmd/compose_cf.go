@@ -82,6 +82,11 @@ func validate() (stackName, *gocf.Template, error) {
 }
 
 func apply(ctx context.Context, clientCF *cf.Client, clientS3 *s3.Client, stack stackName, template *gocf.Template) error {
+	// TODO: track down where this is coming from
+	if version := gocf.NewTemplate().AWSTemplateFormatVersion; template.AWSTemplateFormatVersion != version {
+		template.AWSTemplateFormatVersion = version
+	}
+
 	var cleanup []cleanup
 	defer func() {
 		for _, c := range cleanup {
