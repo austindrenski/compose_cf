@@ -56,6 +56,12 @@ func validate() (stackName, *gocf.Template, error) {
 		return "", nil, fmt.Errorf("usage: compose_cf STACK_NAME [<stdin>]")
 	}
 
+	if stdin, err := os.Stdin.Stat(); err != nil {
+		return "", nil, fmt.Errorf("unable to read CloudFormation template from stdin: %w", err)
+	} else if stdin.Mode()&os.ModeNamedPipe == 0 {
+		return "", nil, fmt.Errorf("unable to read CloudFormation template from stdin because stdin is not attached")
+	}
+
 	file, err := io.ReadAll(os.Stdin)
 	if err != nil {
 		return "", nil, fmt.Errorf("unable to read CloudFormation template from stdin: %w", err)
@@ -64,6 +70,10 @@ func validate() (stackName, *gocf.Template, error) {
 	template, err := goformation.ParseYAML(file)
 	if err != nil {
 		return "", nil, fmt.Errorf("unable to parse CloudFormation template from stdin: %w", err)
+	}
+
+	if len(template.Resources) == 0 {
+		return "", nil, fmt.Errorf("no resources found in CloudFormation template")
 	}
 
 	return stack, template, nil
@@ -250,7 +260,7 @@ func uploadTemplate(ctx context.Context, clientS3 *s3.Client, bucket bucketName,
 	key := fmt.Sprintf("%s/%s", stack, name)
 	url := templateUrl(fmt.Sprintf("https://s3.amazonaws.com/%s/%s", bucket, key))
 
-	fmt.Printf("Uploading template %s\n\n%s\n", url, yaml)
+	fmt.Printf("Uploading template %s\n```yaml\n%s\n```\n", url, yaml)
 
 	_, err = clientS3.PutObject(ctx, &s3.PutObjectInput{
 		Key:         aws.String(key),
