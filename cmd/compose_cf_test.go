@@ -14,7 +14,7 @@ import (
 	"github.com/testcontainers/testcontainers-go/modules/localstack"
 )
 
-func TestUp(t *testing.T) {
+func TestApply(t *testing.T) {
 	ctx, clientCF, clientS3 := setup(context.TODO(), t)
 
 	template, err := goformation.ParseYAML([]byte(`
@@ -25,7 +25,7 @@ Resources:
 `))
 	assert.NoError(t, err)
 
-	err = up(ctx, clientCF, clientS3, "some_stack", template)
+	err = apply(ctx, clientCF, clientS3, "some_stack", template)
 
 	assert.NoError(t, err)
 }

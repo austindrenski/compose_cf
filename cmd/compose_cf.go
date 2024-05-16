@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"regexp"
+	"strings"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -20,10 +20,12 @@ import (
 	"github.com/hashicorp/go-uuid"
 )
 
+const root = resourceType("template")
+
 type bucketName string
 type cleanup func()
+type resourceType string
 type stackName string
-type templateUrl string
 
 func main() {
 	stack, template, err := validate()
@@ -41,7 +43,7 @@ func main() {
 	clientCF := cf.NewFromConfig(cfg)
 	clientS3 := s3.NewFromConfig(cfg)
 
-	if err := up(ctx, clientCF, clientS3, stack, template); err != nil {
+	if err := apply(ctx, clientCF, clientS3, stack, template); err != nil {
 		panic(err)
 	}
 }
@@ -79,17 +81,28 @@ func validate() (stackName, *gocf.Template, error) {
 	return stack, template, nil
 }
 
-func up(ctx context.Context, clientCF *cf.Client, clientS3 *s3.Client, stack stackName, template *gocf.Template) error {
+func apply(ctx context.Context, clientCF *cf.Client, clientS3 *s3.Client, stack stackName, template *gocf.Template) error {
+	var cleanup []cleanup
+	defer func() {
+		for _, c := range cleanup {
+			//goland:noinspection GoDeferInLoop
+			defer c()
+		}
+	}()
+
 	bucket, cleanupBucket, err := createBucket(ctx, clientS3)
 	if err != nil {
 		return err
+	} else {
+		cleanup = append(cleanup, cleanupBucket)
 	}
-	defer cleanupBucket()
 
-	templateUrl, cleanupTemplates, err := splitTemplates(ctx, clientS3, bucket, template)
-	defer cleanupTemplates()
-	if err != nil {
-		return err
+	for resourceType, template := range splitTemplates(bucket, template) {
+		if cleanupTemplate, err := uploadTemplate(ctx, clientS3, bucket, string(resourceType), template); err != nil {
+			return err
+		} else {
+			cleanup = append(cleanup, cleanupTemplate)
+		}
 	}
 
 	_, err = clientCF.DescribeStacks(ctx, &cf.DescribeStacksInput{
@@ -97,9 +110,9 @@ func up(ctx context.Context, clientCF *cf.Client, clientS3 *s3.Client, stack sta
 	})
 
 	if err != nil {
-		return createStack(ctx, clientCF, stack, templateUrl)
+		return createStack(ctx, clientCF, bucket, stack)
 	} else {
-		return createChangeSet(ctx, clientCF, stack, templateUrl)
+		return createChangeSet(ctx, clientCF, bucket, stack)
 	}
 }
 
@@ -110,7 +123,6 @@ func createBucket(ctx context.Context, clientS3 *s3.Client) (bucketName, cleanup
 	}
 
 	bucket := fmt.Sprintf("com.docker.compose.%s", key)
-	fmt.Printf("Create s3 bucket %q to store cloudformation template\n", bucket)
 
 	_, err = clientS3.CreateBucket(ctx, &s3.CreateBucketInput{
 		Bucket: aws.String(bucket),
@@ -129,8 +141,8 @@ func createBucket(ctx context.Context, clientS3 *s3.Client) (bucketName, cleanup
 	}, nil
 }
 
-func createChangeSet(ctx context.Context, clientCF *cf.Client, stack stackName, templateUrl templateUrl) error {
-	changeSet, err := clientCF.CreateChangeSet(ctx, &cf.CreateChangeSetInput{
+func createChangeSet(ctx context.Context, client *cf.Client, bucket bucketName, stack stackName) error {
+	changeSet, err := client.CreateChangeSet(ctx, &cf.CreateChangeSetInput{
 		Capabilities: []cftypes.Capability{
 			cftypes.CapabilityCapabilityIam,
 		},
@@ -139,13 +151,13 @@ func createChangeSet(ctx context.Context, clientCF *cf.Client, stack stackName, 
 		IncludeNestedStacks: aws.Bool(true),
 		OnStackFailure:      cftypes.OnStackFailureRollback,
 		StackName:           aws.String(string(stack)),
-		TemplateURL:         aws.String(string(templateUrl)),
+		TemplateURL:         aws.String(fmt.Sprintf("https://s3.amazonaws.com/%s/%s.yaml", bucket, root)),
 	})
 	if err != nil {
 		return err
 	}
 
-	describe, err := clientCF.DescribeChangeSet(ctx, &cf.DescribeChangeSetInput{
+	describe, err := client.DescribeChangeSet(ctx, &cf.DescribeChangeSetInput{
 		ChangeSetName: changeSet.Id,
 		StackName:     aws.String(string(stack)),
 	})
@@ -157,7 +169,7 @@ func createChangeSet(ctx context.Context, clientCF *cf.Client, stack stackName, 
 		return fmt.Errorf(*describe.StatusReason)
 	}
 
-	_, err = clientCF.ExecuteChangeSet(ctx, &cf.ExecuteChangeSetInput{
+	_, err = client.ExecuteChangeSet(ctx, &cf.ExecuteChangeSetInput{
 		ChangeSetName: changeSet.Id,
 		StackName:     aws.String(string(stack)),
 	})
@@ -168,15 +180,15 @@ func createChangeSet(ctx context.Context, clientCF *cf.Client, stack stackName, 
 	return nil
 }
 
-func createStack(ctx context.Context, clientCF *cf.Client, stack stackName, templateUrl templateUrl) error {
-	_, err := clientCF.CreateStack(ctx, &cf.CreateStackInput{
+func createStack(ctx context.Context, client *cf.Client, bucket bucketName, stack stackName) error {
+	_, err := client.CreateStack(ctx, &cf.CreateStackInput{
 		Capabilities: []cftypes.Capability{
 			cftypes.CapabilityCapabilityIam,
 		},
 		OnFailure:            cftypes.OnFailureRollback,
 		RetainExceptOnCreate: aws.Bool(true),
 		StackName:            aws.String(string(stack)),
-		TemplateURL:          aws.String(string(templateUrl)),
+		TemplateURL:          aws.String(fmt.Sprintf("https://s3.amazonaws.com/%s/%s.yaml", bucket, root)),
 	})
 	if err != nil {
 		return err
@@ -185,81 +197,45 @@ func createStack(ctx context.Context, clientCF *cf.Client, stack stackName, temp
 	return nil
 }
 
-func splitTemplates(ctx context.Context, clientS3 *s3.Client, bucket bucketName, template *gocf.Template) (templateUrl, cleanup, error) {
-	var cleanups []cleanup
+func splitTemplates(bucket bucketName, template *gocf.Template) map[resourceType]*gocf.Template {
+	nested := map[resourceType]*gocf.Template{}
 
-	cleanup := func() {
-		for _, c := range cleanups {
-			if c != nil {
-				c()
-			}
+	for name, resource := range template.Resources {
+		resourceType := resourceType(strings.ReplaceAll(resource.AWSCloudFormationType(), "::", ""))
+
+		if template, ok := nested[resourceType]; ok {
+			template.Resources[name] = resource
+		} else {
+			template = gocf.NewTemplate()
+			template.Resources[name] = resource
+			nested[resourceType] = template
+		}
+
+		delete(template.Resources, name)
+	}
+
+	for resourceType := range nested {
+		template.Resources[string(resourceType)] = &gocfcf.Stack{
+			TemplateURL: fmt.Sprintf("https://s3.amazonaws.com/%s/%s.yaml", bucket, resourceType),
 		}
 	}
 
-	if c, err := splitResources(ctx, clientS3, bucket, template.Resources, template.GetAllECSServiceResources()); err != nil {
-		return "", cleanup, err
-	} else {
-		cleanups = append(cleanups, c)
-	}
+	nested[root] = template
 
-	if c, err := splitResources(ctx, clientS3, bucket, template.Resources, template.GetAllECSTaskDefinitionResources()); err != nil {
-		return "", cleanup, err
-	} else {
-		cleanups = append(cleanups, c)
-	}
-
-	if c, err := splitResources(ctx, clientS3, bucket, template.Resources, template.GetAllServiceDiscoveryServiceResources()); err != nil {
-		return "", cleanup, err
-	} else {
-		cleanups = append(cleanups, c)
-	}
-
-	if templateUrl, c, err := uploadTemplate(ctx, clientS3, bucket, "template.yaml", template); err != nil {
-		return "", cleanup, err
-	} else {
-		cleanups = append(cleanups, c)
-		return templateUrl, cleanup, nil
-	}
+	return nested
 }
 
-func splitResources[T gocf.Resource](ctx context.Context, clientS3 *s3.Client, bucket bucketName, resources gocf.Resources, subset map[string]T) (cleanup, error) {
-	if len(subset) == 0 {
-		return nil, nil
+func uploadTemplate(ctx context.Context, clientS3 *s3.Client, bucket bucketName, key string, template *gocf.Template) (cleanup, error) {
+	if !strings.HasSuffix(key, ".yaml") {
+		key = fmt.Sprintf("%s.yaml", key)
 	}
 
-	nested := gocf.NewTemplate()
-
-	for name, resource := range subset {
-		delete(resources, name)
-
-		nested.Resources[name] = resource
-
-		if nested.Description == "" {
-			nested.Description = fmt.Sprintf("%sNestedStack", regexp.MustCompile("[^a-zA-Z0-9]+").ReplaceAllString(resource.AWSCloudFormationType(), ""))
-		}
-	}
-
-	templateUrl, cleanup, err := uploadTemplate(ctx, clientS3, bucket, fmt.Sprintf("template.%s.yaml", nested.Description), nested)
+	yaml, err := template.YAML()
 	if err != nil {
 		return nil, err
 	}
 
-	resources[nested.Description] = &gocfcf.Stack{
-		TemplateURL: string(templateUrl),
-	}
-
-	return cleanup, nil
-}
-
-func uploadTemplate(ctx context.Context, clientS3 *s3.Client, bucket bucketName, key string, template *gocf.Template) (templateUrl, cleanup, error) {
-	yaml, err := template.YAML()
-	if err != nil {
-		return "", nil, err
-	}
-
-	url := templateUrl(fmt.Sprintf("https://s3.amazonaws.com/%s/%s", bucket, key))
-
-	fmt.Printf("Uploading template %s\n```yaml\n%s\n```\n", url, yaml)
+	fmt.Printf("Uploading template `%s/%s`\n```yaml\n%s```\n", bucket, key, yaml)
 
 	_, err = clientS3.PutObject(ctx, &s3.PutObjectInput{
 		Body:        bytes.NewReader(yaml),
@@ -268,10 +244,10 @@ func uploadTemplate(ctx context.Context, clientS3 *s3.Client, bucket bucketName,
 		Key:         aws.String(key),
 	})
 	if err != nil {
-		return "", nil, err
+		return nil, err
 	}
 
-	return url, func() {
+	return func() {
 		_, err := clientS3.DeleteObject(ctx, &s3.DeleteObjectInput{
 			Bucket: aws.String(string(bucket)),
 			Key:    aws.String(key),
