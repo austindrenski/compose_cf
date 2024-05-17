@@ -162,16 +162,16 @@ func createChangeSet(ctx context.Context, client *cf.Client, bucket bucketName, 
 		return err
 	}
 
-	describe, err := client.DescribeChangeSet(ctx, &cf.DescribeChangeSetInput{
-		ChangeSetName: changeSet.Id,
-		StackName:     aws.String(string(stack)),
-	})
-	if err != nil {
-		return err
-	}
-
-	if describe.Status == cftypes.ChangeSetStatusFailed {
-		return fmt.Errorf(*describe.StatusReason)
+	for {
+		if describe, err := client.DescribeChangeSet(ctx, &cf.DescribeChangeSetInput{
+			ChangeSetName:         changeSet.Id,
+			IncludePropertyValues: aws.Bool(true),
+			StackName:             aws.String(string(stack)),
+		}); err != nil {
+			return err
+		} else if describe.Status == cftypes.ChangeSetStatusCreateComplete {
+			break
+		}
 	}
 
 	_, err = client.ExecuteChangeSet(ctx, &cf.ExecuteChangeSetInput{
