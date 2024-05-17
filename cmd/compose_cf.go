@@ -171,6 +171,8 @@ func createChangeSet(ctx context.Context, client *cf.Client, bucket bucketName, 
 			return err
 		} else if describe.Status == cftypes.ChangeSetStatusCreateComplete {
 			break
+		} else {
+			time.Sleep(5 * time.Second)
 		}
 	}
 
