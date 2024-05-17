@@ -102,22 +102,26 @@ func apply(ctx context.Context, clientCF *cf.Client, clientS3 *s3.Client, stack 
 		cleanup = append(cleanup, cleanupBucket)
 	}
 
-	for resourceType, template := range splitTemplates(bucket, template) {
-		if cleanupTemplate, err := uploadTemplate(ctx, clientS3, bucket, string(resourceType), template); err != nil {
+	for resourceType, template := range split(bucket, template) {
+		if cleanupTemplate, err := upload(ctx, clientS3, bucket, string(resourceType), template); err != nil {
 			return err
 		} else {
 			cleanup = append(cleanup, cleanupTemplate)
 		}
 	}
 
-	_, err = clientCF.DescribeStacks(ctx, &cf.DescribeStacksInput{
+	return create(ctx, clientCF, bucket, stack)
+}
+
+func create(ctx context.Context, client *cf.Client, bucket bucketName, stack stackName) error {
+	_, err := client.DescribeStacks(ctx, &cf.DescribeStacksInput{
 		StackName: aws.String(string(stack)),
 	})
 
 	if err != nil {
-		return createStack(ctx, clientCF, bucket, stack)
+		return createStack(ctx, client, bucket, stack)
 	} else {
-		return createChangeSet(ctx, clientCF, bucket, stack)
+		return createChangeSet(ctx, client, bucket, stack)
 	}
 }
 
@@ -204,7 +208,7 @@ func createStack(ctx context.Context, client *cf.Client, bucket bucketName, stac
 	return nil
 }
 
-func splitTemplates(bucket bucketName, template *gocf.Template) map[resourceType]*gocf.Template {
+func split(bucket bucketName, template *gocf.Template) map[resourceType]*gocf.Template {
 	templates := map[resourceType]*gocf.Template{}
 
 	for name, resource := range template.Resources {
@@ -232,7 +236,7 @@ func splitTemplates(bucket bucketName, template *gocf.Template) map[resourceType
 	return templates
 }
 
-func uploadTemplate(ctx context.Context, client *s3.Client, bucket bucketName, key string, template *gocf.Template) (cleanup, error) {
+func upload(ctx context.Context, client *s3.Client, bucket bucketName, key string, template *gocf.Template) (cleanup, error) {
 	if !strings.HasSuffix(key, ".yaml") {
 		key = fmt.Sprintf("%s.yaml", key)
 	}
