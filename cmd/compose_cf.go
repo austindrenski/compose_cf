@@ -205,31 +205,31 @@ func createStack(ctx context.Context, client *cf.Client, bucket bucketName, stac
 }
 
 func splitTemplates(bucket bucketName, template *gocf.Template) map[resourceType]*gocf.Template {
-	nested := map[resourceType]*gocf.Template{}
+	templates := map[resourceType]*gocf.Template{}
 
 	for name, resource := range template.Resources {
 		resourceType := resourceType(strings.ReplaceAll(resource.AWSCloudFormationType(), "::", ""))
 
-		if template, ok := nested[resourceType]; ok {
+		if template, ok := templates[resourceType]; ok {
 			template.Resources[name] = resource
 		} else {
 			template = gocf.NewTemplate()
 			template.Resources[name] = resource
-			nested[resourceType] = template
+			templates[resourceType] = template
 		}
 
 		delete(template.Resources, name)
 	}
 
-	for resourceType := range nested {
+	for resourceType := range templates {
 		template.Resources[string(resourceType)] = &gocfcf.Stack{
 			TemplateURL: fmt.Sprintf("https://s3.amazonaws.com/%s/%s.yaml", bucket, resourceType),
 		}
 	}
 
-	nested[root] = template
+	templates[root] = template
 
-	return nested
+	return templates
 }
 
 func uploadTemplate(ctx context.Context, client *s3.Client, bucket bucketName, key string, template *gocf.Template) (cleanup, error) {
