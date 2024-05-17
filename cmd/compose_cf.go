@@ -121,7 +121,7 @@ func apply(ctx context.Context, clientCF *cf.Client, clientS3 *s3.Client, stack 
 	}
 }
 
-func createBucket(ctx context.Context, clientS3 *s3.Client) (bucketName, cleanup, error) {
+func createBucket(ctx context.Context, client *s3.Client) (bucketName, cleanup, error) {
 	key, err := uuid.GenerateUUID()
 	if err != nil {
 		return "", nil, err
@@ -129,7 +129,7 @@ func createBucket(ctx context.Context, clientS3 *s3.Client) (bucketName, cleanup
 
 	bucket := fmt.Sprintf("com.docker.compose.%s", key)
 
-	_, err = clientS3.CreateBucket(ctx, &s3.CreateBucketInput{
+	_, err = client.CreateBucket(ctx, &s3.CreateBucketInput{
 		Bucket: aws.String(bucket),
 	})
 	if err != nil {
@@ -137,7 +137,7 @@ func createBucket(ctx context.Context, clientS3 *s3.Client) (bucketName, cleanup
 	}
 
 	return bucketName(bucket), func() {
-		_, err := clientS3.DeleteBucket(ctx, &s3.DeleteBucketInput{
+		_, err := client.DeleteBucket(ctx, &s3.DeleteBucketInput{
 			Bucket: aws.String(bucket),
 		})
 		if err != nil {
@@ -230,7 +230,7 @@ func splitTemplates(bucket bucketName, template *gocf.Template) map[resourceType
 	return nested
 }
 
-func uploadTemplate(ctx context.Context, clientS3 *s3.Client, bucket bucketName, key string, template *gocf.Template) (cleanup, error) {
+func uploadTemplate(ctx context.Context, client *s3.Client, bucket bucketName, key string, template *gocf.Template) (cleanup, error) {
 	if !strings.HasSuffix(key, ".yaml") {
 		key = fmt.Sprintf("%s.yaml", key)
 	}
@@ -242,7 +242,7 @@ func uploadTemplate(ctx context.Context, clientS3 *s3.Client, bucket bucketName,
 
 	fmt.Printf("Uploading template `%s/%s`\n```yaml\n%s```\n", bucket, key, yaml)
 
-	_, err = clientS3.PutObject(ctx, &s3.PutObjectInput{
+	_, err = client.PutObject(ctx, &s3.PutObjectInput{
 		Body:        bytes.NewReader(yaml),
 		Bucket:      aws.String(string(bucket)),
 		ContentType: aws.String("application/yaml"),
@@ -253,7 +253,7 @@ func uploadTemplate(ctx context.Context, clientS3 *s3.Client, bucket bucketName,
 	}
 
 	return func() {
-		_, err := clientS3.DeleteObject(ctx, &s3.DeleteObjectInput{
+		_, err := client.DeleteObject(ctx, &s3.DeleteObjectInput{
 			Bucket: aws.String(string(bucket)),
 			Key:    aws.String(key),
 		})
