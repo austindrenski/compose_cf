@@ -1,5 +1,5 @@
 # syntax = docker/dockerfile:1.7-labs
-FROM --platform="${BUILDPLATFORM}" golang:1.22.3-alpine3.19 AS build
+FROM --platform="${BUILDPLATFORM}" golang:1.22.4-alpine3.19 AS build
 WORKDIR /build/
 
 COPY --link --parents go.mod .
